@@ -4,3 +4,4 @@ members = [
     "avg32",
     "adieu",
 ]
+resolver = "2"

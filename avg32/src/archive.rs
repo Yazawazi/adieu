@@ -324,7 +324,7 @@ mod tests {
     fn test_decompress_compress_seen() {
         let arc = super::load("../SEEN.TXT").unwrap();
 
-        for (i, entry) in arc.entries.iter().enumerate() {
+        for (i, _entry) in arc.entries.iter().enumerate() {
             let data = &arc.data[i];
             let decomp = decompress(&data.data, data.orgsize as usize).unwrap();
             // let comp = compress(&decomp).unwrap()
