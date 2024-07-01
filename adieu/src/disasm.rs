@@ -1,7 +1,7 @@
-use avg32::parser::{AVG32Scene, Header, Pos, Opcode};
+use anyhow::{anyhow, Result};
+use avg32::parser::{AVG32Scene, Header, Opcode, Pos};
 use avg32::write::Writeable;
 use std::collections::HashMap;
-use anyhow::{anyhow, Result};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 enum LabelKind {
@@ -15,28 +15,25 @@ enum LabelKind {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 struct LabelPos {
     kind: LabelKind,
-    pos: Pos
+    pos: Pos,
 }
 
 impl LabelPos {
     fn new(kind: LabelKind, pos: Pos) -> Self {
-        LabelPos {
-            kind: kind,
-            pos: pos
-        }
+        LabelPos { kind, pos }
     }
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 struct Label {
     name: String,
-    opcodes: Vec<Opcode>
+    opcodes: Vec<Opcode>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct LabelResolvedScene {
     header: Header,
-    labels: Vec<Label>
+    labels: Vec<Label>,
 }
 
 fn extract_label(opcode: &Opcode) -> Option<Vec<LabelPos>> {
@@ -50,20 +47,26 @@ fn extract_label(opcode: &Opcode) -> Option<Vec<LabelPos>> {
                 res.push(LabelPos::new(LabelKind::TableCall, pos.clone()))
             }
             Some(res)
-        },
+        }
         Opcode::TableJump(_, poss) => {
             let mut res = vec![];
             for pos in poss.iter() {
                 res.push(LabelPos::new(LabelKind::TableJump, pos.clone()))
             }
             Some(res)
-        },
-        _ => None
+        }
+        _ => None,
     }
 }
 
 fn extract_labels(opcodes: &[Opcode]) -> Vec<LabelPos> {
-    opcodes.iter().map(extract_label).filter(|x| x.is_some()).map(|x| x.unwrap()).flatten().collect()
+    opcodes
+        .iter()
+        .map(extract_label)
+        .filter(|x| x.is_some())
+        .map(|x| x.unwrap())
+        .flatten()
+        .collect()
 }
 
 fn resolve_labels(scene: &AVG32Scene) -> Result<LabelResolvedScene> {
@@ -72,18 +75,24 @@ fn resolve_labels(scene: &AVG32Scene) -> Result<LabelResolvedScene> {
 
     let mut positions: HashMap<u32, Label> = HashMap::new();
 
-    positions.insert(0, Label {
-        name: String::from("start"),
-        opcodes: Vec::new()
-    });
+    positions.insert(
+        0,
+        Label {
+            name: String::from("start"),
+            opcodes: Vec::new(),
+        },
+    );
 
     for label in labels.into_iter() {
         if let Pos::Offset(pos) = label.pos {
             if !positions.contains_key(&pos) {
-                positions.insert(pos, Label {
-                    name: format!("{:?}_0x{:x?}", label.kind, pos).to_lowercase(),
-                    opcodes: Vec::new()
-                });
+                positions.insert(
+                    pos,
+                    Label {
+                        name: format!("{:?}_0x{:x?}", label.kind, pos).to_lowercase(),
+                        opcodes: Vec::new(),
+                    },
+                );
             }
         } else {
             return Err(anyhow!("Labels were already resolved"));
@@ -104,23 +113,52 @@ fn resolve_labels(scene: &AVG32Scene) -> Result<LabelResolvedScene> {
         match next_offset {
             Some(noff) => {
                 if cur_pos < *noff {
-                    debug!("{:04x?}-{:04x}: 0x{:04x?} (0x{:04x?}) + 0x{:02x?} - {:x?}", offset.unwrap() + start_pos, *next_offset.unwrap_or(&0) + start_pos, cur_pos + start_pos, cur_pos, opcode.byte_size(), opcode);
+                    debug!(
+                        "{:04x?}-{:04x}: 0x{:04x?} (0x{:04x?}) + 0x{:02x?} - {:x?}",
+                        offset.unwrap() + start_pos,
+                        *next_offset.unwrap_or(&0) + start_pos,
+                        cur_pos + start_pos,
+                        cur_pos,
+                        opcode.byte_size(),
+                        opcode
+                    );
                     cur_label.opcodes.push(opcode.clone());
                     cur_pos += opcode.byte_size() as u32;
                 } else if cur_pos == *noff {
                     cur_label = positions.get_mut(noff).unwrap();
                     debug!("    {}:", cur_label.name);
-                    debug!("{:04x?}-{:04x}: 0x{:04x?} (0x{:04x?}) + 0x{:02x?} - {:x?}", offset.unwrap() + start_pos, *next_offset.unwrap_or(&0) + start_pos, cur_pos + start_pos, cur_pos, opcode.byte_size(), opcode);
+                    debug!(
+                        "{:04x?}-{:04x}: 0x{:04x?} (0x{:04x?}) + 0x{:02x?} - {:x?}",
+                        offset.unwrap() + start_pos,
+                        *next_offset.unwrap_or(&0) + start_pos,
+                        cur_pos + start_pos,
+                        cur_pos,
+                        opcode.byte_size(),
+                        opcode
+                    );
                     cur_label.opcodes.push(opcode.clone());
                     offset = next_offset;
                     next_offset = offset_iter.next();
                     cur_pos += opcode.byte_size() as u32;
                 } else {
-                    return Err(anyhow!("Misaligned opcode at pos 0x{:04x?}: offset 0x{:04x?} opcode {:x?}", cur_pos, offset, opcode));
+                    return Err(anyhow!(
+                        "Misaligned opcode at pos 0x{:04x?}: offset 0x{:04x?} opcode {:x?}",
+                        cur_pos,
+                        offset,
+                        opcode
+                    ));
                 }
-            },
+            }
             None => {
-                debug!("{:04x?}-{:04x}: 0x{:04x?} (0x{:04x?}) + 0x{:02x?} - {:x?}", offset.unwrap() + start_pos, *next_offset.unwrap_or(&0) + start_pos, cur_pos + start_pos, cur_pos, opcode.byte_size(), opcode);
+                debug!(
+                    "{:04x?}-{:04x}: 0x{:04x?} (0x{:04x?}) + 0x{:02x?} - {:x?}",
+                    offset.unwrap() + start_pos,
+                    *next_offset.unwrap_or(&0) + start_pos,
+                    cur_pos + start_pos,
+                    cur_pos,
+                    opcode.byte_size(),
+                    opcode
+                );
                 cur_label.opcodes.push(opcode.clone());
                 cur_pos += opcode.byte_size() as u32;
             }
@@ -138,7 +176,7 @@ fn resolve_labels(scene: &AVG32Scene) -> Result<LabelResolvedScene> {
 
     Ok(LabelResolvedScene {
         header: scene.header.clone(),
-        labels: resolved_labels
+        labels: resolved_labels,
     })
 }
 
@@ -152,7 +190,7 @@ fn convert_byte_to_label_positions(opcodes: &mut [Opcode], positions: &HashMap<u
                 } else {
                     unreachable!()
                 }
-            },
+            }
             Opcode::Call(ref mut pos) => {
                 if let Pos::Offset(b) = pos {
                     let label = positions.get(b).unwrap();
@@ -160,7 +198,7 @@ fn convert_byte_to_label_positions(opcodes: &mut [Opcode], positions: &HashMap<u
                 } else {
                     unreachable!()
                 }
-            },
+            }
             Opcode::Jump(ref mut pos) => {
                 if let Pos::Offset(b) = pos {
                     let label = positions.get(b).unwrap();
@@ -168,7 +206,7 @@ fn convert_byte_to_label_positions(opcodes: &mut [Opcode], positions: &HashMap<u
                 } else {
                     unreachable!()
                 }
-            },
+            }
             Opcode::TableCall(_, poss) => {
                 for pos in poss.iter_mut() {
                     if let Pos::Offset(b) = pos {
@@ -178,7 +216,7 @@ fn convert_byte_to_label_positions(opcodes: &mut [Opcode], positions: &HashMap<u
                         unreachable!()
                     }
                 }
-            },
+            }
             Opcode::TableJump(_, poss) => {
                 for pos in poss.iter_mut() {
                     if let Pos::Offset(b) = pos {
@@ -188,8 +226,8 @@ fn convert_byte_to_label_positions(opcodes: &mut [Opcode], positions: &HashMap<u
                         unreachable!()
                     }
                 }
-            },
-            _ => ()
+            }
+            _ => (),
         }
     }
 }
@@ -211,7 +249,7 @@ fn compile_labels(resolved: &LabelResolvedScene) -> Result<AVG32Scene> {
 
     Ok(AVG32Scene {
         header: resolved.header.clone(),
-        opcodes: opcodes
+        opcodes,
     })
 }
 
@@ -225,7 +263,7 @@ fn convert_label_to_byte_positions(opcodes: &mut [Opcode], positions: &HashMap<S
                 } else {
                     unreachable!()
                 }
-            },
+            }
             Opcode::Call(ref mut pos) => {
                 if let Pos::Label(name) = pos {
                     let b = positions.get(name).unwrap();
@@ -233,7 +271,7 @@ fn convert_label_to_byte_positions(opcodes: &mut [Opcode], positions: &HashMap<S
                 } else {
                     unreachable!()
                 }
-            },
+            }
             Opcode::Jump(ref mut pos) => {
                 if let Pos::Label(name) = pos {
                     let b = positions.get(name).unwrap();
@@ -241,7 +279,7 @@ fn convert_label_to_byte_positions(opcodes: &mut [Opcode], positions: &HashMap<S
                 } else {
                     unreachable!()
                 }
-            },
+            }
             Opcode::TableCall(_, poss) => {
                 for pos in poss.iter_mut() {
                     if let Pos::Label(name) = pos {
@@ -251,7 +289,7 @@ fn convert_label_to_byte_positions(opcodes: &mut [Opcode], positions: &HashMap<S
                         unreachable!()
                     }
                 }
-            },
+            }
             Opcode::TableJump(_, poss) => {
                 for pos in poss.iter_mut() {
                     if let Pos::Label(name) = pos {
@@ -261,8 +299,8 @@ fn convert_label_to_byte_positions(opcodes: &mut [Opcode], positions: &HashMap<S
                         unreachable!()
                     }
                 }
-            },
-            _ => ()
+            }
+            _ => (),
         }
     }
 }
@@ -270,7 +308,10 @@ fn convert_label_to_byte_positions(opcodes: &mut [Opcode], positions: &HashMap<S
 pub fn disassemble(scene: &AVG32Scene) -> Result<String> {
     let resolved = resolve_labels(&scene)?;
 
-    let sexp = format!(";; -*- mode: lisp -*- \n\n{}", serde_lexpr::to_string(&resolved).unwrap());
+    let sexp = format!(
+        ";; -*- mode: lisp -*- \n\n{}",
+        serde_lexpr::to_string(&resolved).unwrap()
+    );
 
     Ok(sexp)
 }
@@ -285,8 +326,8 @@ pub fn assemble(sexp: &str) -> Result<AVG32Scene> {
 
 #[cfg(test)]
 mod tests {
-    use avg32;
     use super::*;
+    use avg32;
     use pretty_assertions::assert_eq;
 
     #[test]

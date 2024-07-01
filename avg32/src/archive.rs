@@ -1,10 +1,10 @@
-use std::fs::File;
-use std::io::{self, Read, Write, Cursor};
-use std::path::Path;
-use std::mem;
-use anyhow::{Result, anyhow};
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crate::write::Writeable;
+use anyhow::{anyhow, Result};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use std::fs::File;
+use std::io::{self, Cursor, Read, Write};
+use std::mem;
+use std::path::Path;
 
 #[derive(Debug)]
 pub struct ArchiveData {
@@ -26,7 +26,7 @@ pub struct ArchiveEntry {
     pub offset: u32,
     pub arcsize: u32,
     pub filesize: u32,
-    pub unk1: u32
+    pub unk1: u32,
 }
 
 #[derive(Debug)]
@@ -34,7 +34,7 @@ pub struct Archive {
     pub unk1: Vec<u8>,
     pub unk2: Vec<u8>,
     pub entries: Vec<ArchiveEntry>,
-    pub data: Vec<ArchiveData>
+    pub data: Vec<ArchiveData>,
 }
 
 impl Archive {
@@ -43,7 +43,7 @@ impl Archive {
             unk1: vec![0; 0x0C],
             unk2: vec![0; 0x0C],
             entries: Vec::new(),
-            data: Vec::new()
+            data: Vec::new(),
         }
     }
 
@@ -55,14 +55,14 @@ impl Archive {
             offset: self.byte_size() as u32,
             arcsize: compressed.len() as u32 + 0x10,
             filesize: data.len() as u32,
-            unk1: 1
+            unk1: 1,
         };
 
         let data = ArchiveData {
             entries: 0,
             orgsize: data.len() as u32,
             arcsize: compressed.len() as u32 + 0x10,
-            data: compressed
+            data: compressed,
         };
 
         self.entries.push(entry);
@@ -72,7 +72,11 @@ impl Archive {
     }
 
     pub fn finalize(&mut self) {
-        let mut offset = b"PACL".len() + self.unk1.byte_size() + mem::size_of::<u32>() + self.unk2.byte_size() + self.entries.byte_size();
+        let mut offset = b"PACL".len()
+            + self.unk1.byte_size()
+            + mem::size_of::<u32>()
+            + self.unk2.byte_size()
+            + self.entries.byte_size();
         for (i, entry) in self.entries.iter_mut().enumerate() {
             entry.offset = offset as u32;
             offset += self.data[i].byte_size();
@@ -82,8 +86,8 @@ impl Archive {
 
 pub mod parser {
     use super::*;
-    use nom::number::streaming::le_u32;
     use crate::parser::{c_string, CustomError};
+    use nom::number::streaming::le_u32;
 
     named!(archive_data<&[u8], ArchiveData, CustomError<&[u8]>>,
            do_parse!(
@@ -157,8 +161,7 @@ impl Writeable for ArchiveData {
 
 impl Writeable for ArchiveEntry {
     fn byte_size(&self) -> usize {
-        0x10
-            + self.offset.byte_size()
+        0x10 + self.offset.byte_size()
             + self.arcsize.byte_size()
             + self.filesize.byte_size()
             + self.unk1.byte_size()
@@ -166,7 +169,10 @@ impl Writeable for ArchiveEntry {
 
     fn write<W: Write>(&self, writer: &mut W) -> Result<(), io::Error> {
         if self.filename.len() > 0x10 {
-            return Err(io::Error::new(io::ErrorKind::Other, "Cannot fit filename into 16 bytes"));
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Cannot fit filename into 16 bytes",
+            ));
         }
 
         let mut bytes = vec![];
@@ -195,7 +201,10 @@ impl Writeable for Archive {
 
     fn write<W: Write>(&self, writer: &mut W) -> Result<(), io::Error> {
         if self.entries.len() != self.data.len() {
-            return Err(io::Error::new(io::ErrorKind::Other, "Number of entries and data do not match"));
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Number of entries and data do not match",
+            ));
         }
 
         writer.write_all(b"PACL")?;
@@ -255,7 +264,7 @@ pub fn decompress(input: &[u8], orgsize: usize) -> Result<Vec<u8>> {
             let l = (w & 0xF) + 2;
             let d = (w >> 4) as usize;
             for _ in 0..l {
-                let b = res[res.len()-d-1];
+                let b = res[res.len() - d - 1];
                 res.write_u8(b)?;
                 if res.len() >= orgsize {
                     break;
@@ -267,7 +276,11 @@ pub fn decompress(input: &[u8], orgsize: usize) -> Result<Vec<u8>> {
     }
 
     if res.len() != orgsize {
-        return Err(anyhow!("Decompressed size != orgsize: {} != {}", res.len(), orgsize));
+        return Err(anyhow!(
+            "Decompressed size != orgsize: {} != {}",
+            res.len(),
+            orgsize
+        ));
     }
 
     Ok(res)
@@ -295,8 +308,15 @@ mod tests {
 
     #[test]
     fn test_decompress() {
-        let bytes = vec![0xFC, 0x54, 0x50, 0x43, 0x33, 0x32, 0x00, 0x0F, 0x00, 0x0F, 0x00, 0x85, 0x01, 0x1F, 0x01, 0x0F];
-        let expected = vec![0x54, 0x50, 0x43, 0x33, 0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let bytes = vec![
+            0xFC, 0x54, 0x50, 0x43, 0x33, 0x32, 0x00, 0x0F, 0x00, 0x0F, 0x00, 0x85, 0x01, 0x1F,
+            0x01, 0x0F,
+        ];
+        let expected = vec![
+            0x54, 0x50, 0x43, 0x33, 0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
         assert_eq!(&expected, &decompress(&bytes, expected.len()).unwrap());
     }
 

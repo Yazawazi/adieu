@@ -1,23 +1,27 @@
-#[macro_use] extern crate nom;
-#[macro_use] extern crate nom_trace;
+#[macro_use]
+extern crate nom;
+#[macro_use]
+extern crate nom_trace;
 extern crate serde;
-#[macro_use] extern crate serde_derive;
-extern crate encoding_rs;
-extern crate byteorder;
+#[macro_use]
+extern crate serde_derive;
 extern crate anyhow;
+extern crate byteorder;
+extern crate encoding_rs;
 
 #[cfg(test)]
-#[macro_use] extern crate pretty_assertions;
+#[macro_use]
+extern crate pretty_assertions;
 
 pub mod archive;
 pub mod font;
 pub mod parser;
 pub mod write;
 
+use anyhow::{anyhow, Result};
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
-use anyhow::{anyhow, Result};
 
 pub use parser::AVG32Scene;
 

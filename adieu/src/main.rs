@@ -1,107 +1,133 @@
-#![feature(map_into_keys_values)]
-
 extern crate avg32;
 extern crate serde;
-#[macro_use] extern crate serde_derive;
+#[macro_use]
+extern crate serde_derive;
+extern crate anyhow;
 extern crate lexpr;
 extern crate serde_lexpr;
-extern crate anyhow;
-#[macro_use] extern crate log;
-extern crate env_logger;
+#[macro_use]
+extern crate log;
 extern crate clap;
+extern crate env_logger;
 
 #[cfg(test)]
 extern crate pretty_assertions;
 
 mod disasm;
 
-use std::fs::{self, File};
-use std::io::Write;
-use std::path::{Path, PathBuf};
 use anyhow::Result;
-use clap::{Arg, App, SubCommand, ArgMatches, crate_version, crate_authors};
 use avg32::archive::{self, Archive};
 use avg32::font;
 use avg32::write::Writeable;
+use clap::{crate_authors, crate_version, App, Arg, ArgMatches, SubCommand};
+use std::fs::{self, File};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
 fn get_app<'a, 'b>() -> App<'a, 'b> {
     App::new("adieu")
         .version(crate_version!())
         .author(crate_authors!())
         .about("AVG32 bytecode disassembler/reassembler")
-        .subcommand(SubCommand::with_name("unpack")
-                    .about("Unpack a SEEN.TXT file")
-                    .arg(Arg::with_name("output-dir")
-                         .short("o")
-                         .long("output-dir")
-                         .help("output directory")
-                         .takes_value(true)
-                         .value_name("DIR"))
-                    .arg(Arg::with_name("raw")
-                         .short("r")
-                         .long("raw")
-                         .help("don't automatically dissassemble files"))
-                    .arg(Arg::with_name("FILE")
-                         .required(true)
-                         .help("SEEN.TXT file")
-                         .index(1))
+        .subcommand(
+            SubCommand::with_name("unpack")
+                .about("Unpack a SEEN.TXT file")
+                .arg(
+                    Arg::with_name("output-dir")
+                        .short("o")
+                        .long("output-dir")
+                        .help("output directory")
+                        .takes_value(true)
+                        .value_name("DIR"),
+                )
+                .arg(
+                    Arg::with_name("raw")
+                        .short("r")
+                        .long("raw")
+                        .help("don't automatically dissassemble files"),
+                )
+                .arg(
+                    Arg::with_name("FILE")
+                        .required(true)
+                        .help("SEEN.TXT file")
+                        .index(1),
+                ),
         )
-        .subcommand(SubCommand::with_name("repack")
-                    .about("Packs a directory to a SEEN.TXT file")
-                    .arg(Arg::with_name("output-dir")
-                         .short("o")
-                         .long("output-dir")
-                         .help("output directory")
-                         .takes_value(true)
-                         .value_name("DIR"))
-                    .arg(Arg::with_name("raw")
-                         .short("r")
-                         .long("raw")
-                         .help("don't automatically assemble files"))
-                    .arg(Arg::with_name("DIR")
-                         .required(true)
-                         .help("Directory containing bytecode files")
-                         .index(1))
+        .subcommand(
+            SubCommand::with_name("repack")
+                .about("Packs a directory to a SEEN.TXT file")
+                .arg(
+                    Arg::with_name("output-dir")
+                        .short("o")
+                        .long("output-dir")
+                        .help("output directory")
+                        .takes_value(true)
+                        .value_name("DIR"),
+                )
+                .arg(
+                    Arg::with_name("raw")
+                        .short("r")
+                        .long("raw")
+                        .help("don't automatically assemble files"),
+                )
+                .arg(
+                    Arg::with_name("DIR")
+                        .required(true)
+                        .help("Directory containing bytecode files")
+                        .index(1),
+                ),
         )
-        .subcommand(SubCommand::with_name("disasm")
-                    .about("Disassemble an AVG32 scene")
-                    .arg(Arg::with_name("output-dir")
-                         .short("o")
-                         .long("output-dir")
-                         .help("output directory")
-                         .takes_value(true)
-                         .value_name("DIR"))
-                    .arg(Arg::with_name("FILE")
-                         .required(true)
-                         .help("SEEN<XXX>.TXT file")
-                         .index(1))
+        .subcommand(
+            SubCommand::with_name("disasm")
+                .about("Disassemble an AVG32 scene")
+                .arg(
+                    Arg::with_name("output-dir")
+                        .short("o")
+                        .long("output-dir")
+                        .help("output directory")
+                        .takes_value(true)
+                        .value_name("DIR"),
+                )
+                .arg(
+                    Arg::with_name("FILE")
+                        .required(true)
+                        .help("SEEN<XXX>.TXT file")
+                        .index(1),
+                ),
         )
-        .subcommand(SubCommand::with_name("asm")
-                    .about("Assemble a .adieu source into an AVG32 scene")
-                    .arg(Arg::with_name("output-dir")
-                         .short("o")
-                         .long("output-dir")
-                         .help("output directory")
-                         .takes_value(true)
-                         .value_name("DIR"))
-                    .arg(Arg::with_name("FILE")
-                         .required(true)
-                         .help("SEEN<XXX>.adieu file")
-                         .index(1))
+        .subcommand(
+            SubCommand::with_name("asm")
+                .about("Assemble a .adieu source into an AVG32 scene")
+                .arg(
+                    Arg::with_name("output-dir")
+                        .short("o")
+                        .long("output-dir")
+                        .help("output directory")
+                        .takes_value(true)
+                        .value_name("DIR"),
+                )
+                .arg(
+                    Arg::with_name("FILE")
+                        .required(true)
+                        .help("SEEN<XXX>.adieu file")
+                        .index(1),
+                ),
         )
-        .subcommand(SubCommand::with_name("font")
-                    .about("Reads FN.DAT")
-                    .arg(Arg::with_name("FILE")
-                         .required(true)
-                         .help("FN.DAT file")
-                         .index(1)))
+        .subcommand(
+            SubCommand::with_name("font").about("Reads FN.DAT").arg(
+                Arg::with_name("FILE")
+                    .required(true)
+                    .help("FN.DAT file")
+                    .index(1),
+            ),
+        )
 }
 
 fn cmd_unpack(sub_matches: &ArgMatches) -> Result<()> {
     let input_file = Path::new(sub_matches.value_of("FILE").unwrap());
     let output_dir = match sub_matches.value_of("output-dir") {
         Some(dir) => Path::new(dir),
-        None => input_file.parent().unwrap()
+        None => input_file.parent().unwrap(),
     };
     let raw = sub_matches.is_present("raw");
 
@@ -117,7 +143,8 @@ fn cmd_unpack(sub_matches: &ArgMatches) -> Result<()> {
             decomp.write(&mut file)?;
         } else {
             let scene = avg32::load_bytes(&decomp)?;
-            let output_file = output_dir.join(PathBuf::from(&entry.filename).with_extension("adieu"));
+            let output_file =
+                output_dir.join(PathBuf::from(&entry.filename).with_extension("adieu"));
             let mut file = File::create(&output_file)?;
             let sexp = disasm::disassemble(&scene)?;
             file.write_all(&sexp.as_bytes())?;
@@ -132,7 +159,7 @@ fn cmd_repack(sub_matches: &ArgMatches) -> Result<()> {
     let input_dir = Path::new(sub_matches.value_of("DIR").unwrap());
     let output_dir = match sub_matches.value_of("output-dir") {
         Some(dir) => Path::new(dir),
-        None => input_dir.parent().unwrap()
+        None => input_dir.parent().unwrap(),
     };
     let raw = sub_matches.is_present("raw");
 
@@ -155,7 +182,13 @@ fn cmd_repack(sub_matches: &ArgMatches) -> Result<()> {
             scene.write(&mut bytes)?;
             let comp = archive::compress(&bytes)?;
 
-            let filename = String::from(path.with_extension("TXT").file_name().unwrap().to_str().unwrap());
+            let filename = String::from(
+                path.with_extension("TXT")
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+            );
             arc.add_entry(filename, comp)?;
         }
     }
@@ -173,7 +206,7 @@ fn cmd_disasm(sub_matches: &ArgMatches) -> Result<()> {
     let input_file = Path::new(sub_matches.value_of("FILE").unwrap());
     let output_dir = match sub_matches.value_of("output-dir") {
         Some(dir) => Path::new(dir),
-        None => input_file.parent().unwrap()
+        None => input_file.parent().unwrap(),
     };
 
     let scene = avg32::load(&input_file.to_str().unwrap())?;
@@ -191,7 +224,7 @@ fn cmd_asm(sub_matches: &ArgMatches) -> Result<()> {
     let input_file = Path::new(sub_matches.value_of("FILE").unwrap());
     let output_dir = match sub_matches.value_of("output-dir") {
         Some(dir) => Path::new(dir),
-        None => input_file.parent().unwrap()
+        None => input_file.parent().unwrap(),
     };
 
     let sexp = fs::read_to_string(&input_file)?;
@@ -210,26 +243,24 @@ fn cmd_font(sub_matches: &ArgMatches) -> Result<()> {
 
     let font = font::load(&input_file)?;
 
-    let print = |c| {
-        match c {
-            0 => print!("\""),
-            1 => print!("@"),
-            2 => print!("@"),
-            3 => print!("%"),
-            4 => print!("#"),
-            5 => print!("*"),
-            6 => print!("+"),
-            7 => print!("="),
-            8 => print!("="),
-            9 => print!("-"),
-            10 => print!("-"),
-            11 => print!(":"),
-            12 => print!(":"),
-            13 => print!("."),
-            14 => print!(" "),
-            15 => print!(" "),
-            _ => print!(" ")
-        }
+    let print = |c| match c {
+        0 => print!("\""),
+        1 => print!("@"),
+        2 => print!("@"),
+        3 => print!("%"),
+        4 => print!("#"),
+        5 => print!("*"),
+        6 => print!("+"),
+        7 => print!("="),
+        8 => print!("="),
+        9 => print!("-"),
+        10 => print!("-"),
+        11 => print!(":"),
+        12 => print!(":"),
+        13 => print!("."),
+        14 => print!(" "),
+        15 => print!(" "),
+        _ => print!(" "),
     };
 
     for char in font.chars.iter() {
@@ -242,7 +273,7 @@ fn cmd_font(sub_matches: &ArgMatches) -> Result<()> {
                 print(a);
                 print(b);
             }
-            println!("")
+            println!()
         }
         println!("======================")
     }
@@ -259,9 +290,9 @@ fn main() -> Result<()> {
         ("unpack", Some(sub_matches)) => cmd_unpack(&sub_matches)?,
         ("repack", Some(sub_matches)) => cmd_repack(&sub_matches)?,
         ("disasm", Some(sub_matches)) => cmd_disasm(&sub_matches)?,
-        ("asm",    Some(sub_matches)) => cmd_asm(&sub_matches)?,
-        ("font",   Some(sub_matches)) => cmd_font(&sub_matches)?,
-        _ => get_app().print_long_help()?
+        ("asm", Some(sub_matches)) => cmd_asm(&sub_matches)?,
+        ("font", Some(sub_matches)) => cmd_font(&sub_matches)?,
+        _ => get_app().print_long_help()?,
     }
 
     Ok(())

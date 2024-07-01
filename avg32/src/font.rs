@@ -1,7 +1,7 @@
+use anyhow::{anyhow, Result};
 use std::fs::File;
-use std::io::{Read, Cursor};
+use std::io::{Cursor, Read};
 use std::path::Path;
-use anyhow::{Result, anyhow};
 
 const NUM_CHARS: usize = 4418;
 
@@ -9,7 +9,7 @@ pub type FontChar = [u8; 576];
 
 pub struct Font {
     /// Mapping of JIS code -> 24x24 4bpp glyph
-    pub chars: Vec<FontChar>
+    pub chars: Vec<FontChar>,
 }
 
 pub fn load<T: AsRef<Path>>(filepath: T) -> Result<Font> {
@@ -37,5 +37,5 @@ pub fn load_bytes(bytes: &[u8]) -> Result<Font> {
         chars.push(char);
     }
 
-    Ok(Font { chars: chars })
+    Ok(Font { chars })
 }
